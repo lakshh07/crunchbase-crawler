@@ -8,6 +8,8 @@ load_dotenv()
 CRUNCHBASE_API_KEY = os.getenv('CRUNCHBASE_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 BASE_API_URL = os.getenv('BASE_CB_API_URL')
+SCRAPEOWL_API_KEY = os.getenv('SCRAPEOWL_API_KEY')
+SCRAPEOWL_API_URL = os.getenv('SCRAPEOWL_API_URL')
 
 if not CRUNCHBASE_API_KEY:
     raise ValueError("❌ CRUNCHBASE_API_KEY not found in environment variables")
@@ -17,6 +19,12 @@ if not OPENAI_API_KEY:
 
 if not BASE_API_URL:
     raise ValueError("❌ BASE_CB_API_URL not found in environment variables")
+
+if not SCRAPEOWL_API_KEY:
+    raise ValueError("❌ SCRAPEOwl_API_KEY not found in environment variables")
+
+if not SCRAPEOWL_API_URL:
+    raise ValueError("❌ SCRAPEOwl_API_URL not found in environment variables") 
 
 # File paths
 BASE_DIR = os.getcwd()

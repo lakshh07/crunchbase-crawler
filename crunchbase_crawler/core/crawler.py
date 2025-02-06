@@ -3,11 +3,14 @@ import os
 from crunchbase_crawler.utils.logger import logger
 from crunchbase_crawler.config.settings import (
     BASE_API_URL, COMPANY_FIELDS, 
-    DEFAULT_BATCH_SIZE
+    DEFAULT_BATCH_SIZE,
+    SCRAPEOWL_API_KEY,
+    SCRAPEOWL_API_URL
 )
 from bs4 import BeautifulSoup
 from openai import OpenAI
 from crunchbase_crawler.utils.sql_handler import SQLHandler
+from typing import Optional
 
 class CrunchbaseCrawler:
     def __init__(self, data_dir, crunchbase_api_key, openai_api_key):
@@ -130,7 +133,7 @@ class CrunchbaseCrawler:
             }
 
             if properties.get('website_url'):
-                website_content = self.scrape_website_content(properties['website_url'])
+                website_content = self.scrape_page(properties['website_url'])
                 company_data['website_content'] = website_content
                 if website_content and self.openai_client:
                     logger.info(f"💾 Analyzing website content for: {company_data['name']}")
@@ -165,25 +168,59 @@ class CrunchbaseCrawler:
             'twitter': properties.get('twitter', {}).get('value')
         }
 
-    def scrape_website_content(self, url):
-        """Scrape content from company website"""
+    def scrape_page(self, url: str) -> Optional[str]:
+        """Scrape a webpage using ScrapeOwl API and extract relevant content"""
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            logger.info(f"🔍 Scraping page: {url}")
+            payload = {
+                "api_key": SCRAPEOWL_API_KEY,
+                "url": url,
+                "json_response": True,
+                "render_js": True
             }
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()  
-            soup = BeautifulSoup(response.text, 'lxml') 
-            
-            for script in soup(["script", "style", "header", "footer", "nav", "aside"]):
-                script.decompose()
-                
-            text_elements = soup.find_all(['p', 'h1', 'h2', 'h3', 'li'])
-            text = " ".join(elem.get_text(strip=True) for elem in text_elements)
-            
-            return text if text else None
+
+            response = requests.post(
+                SCRAPEOWL_API_URL,
+                headers={
+                    "Content-Type": "application/json"
+                },
+                json=payload
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('status') == 200:
+                    html_content = result.get('html')
+                    if html_content:
+                        soup = BeautifulSoup(html_content, 'lxml')
+
+                        for element in soup.find_all(['script', 'style', 'nav', 'footer', 'header', 'aside', 'form', 'noscript', 'svg']):
+                            element.decompose()
+
+                        cleaned_text = []
+                        heading_levels = {"h1": "# ", "h2": "## ", "h3": "### ", "h4": "#### ", "h5": "##### ", "h6": "###### "}
+
+                        for elem in soup.select("h1, h2, h3, h4, h5, h6, p, li"):
+                            tag_name = elem.name
+                            text = elem.get_text(strip=True)
+                            if text:
+                                if tag_name in heading_levels:
+                                    cleaned_text.append(f"{heading_levels[tag_name]}{text}")
+                                elif tag_name == "li":
+                                    cleaned_text.append(f"- {text}")
+                                else:
+                                    cleaned_text.append(text)
+
+                        return "\n".join(cleaned_text) if cleaned_text else None
+                else:
+                    logger.error(f"ScrapeOwl API error: {result}")
+                    return None
+            else:
+                logger.error(f"HTTP error: {response.status_code}")
+                return None
+
         except Exception as e:
-            logger.error(f"❌ Website scraping failed for {url}: {str(e)}")
+            logger.error(f"Error during scraping: {str(e)}")
             return None
 
     def analyze_website_with_gpt(self, website_content):
